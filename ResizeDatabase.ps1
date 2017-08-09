@@ -1,4 +1,4 @@
-﻿<#
+<#
     .DESCRIPTION
         An example runbook which gets all the ARM resources using the Run As Account (Service Principal)
 
@@ -35,9 +35,7 @@ if($WebhookData -ne $null)
             Write-Error -Message $_.Exception
             throw $_.Exception
         }
-    }
-
-    Set-AzureRmContext -SubscriptionId "58bf9f36-0655-4b2c-b756-0c316f427047"
+    }    
 
     # Collect properties of WebhookData.
     $WebhookName    =   $WebhookData.WebhookName
@@ -53,84 +51,43 @@ if($WebhookData -ne $null)
     Write-Output "============="
     Write-Output $WebhookBody
 
-    # Obtain the AlertContext
-    $AlertContext = [object]$WebhookBody.context
-
     # Some selected AlertContext information
     Write-Output "`nALERT CONTEXT DATA"
     Write-Output "==================="
-    Write-Output $AlertContext.name
-    Write-Output $AlertContext.subscriptionId
-    Write-Output $AlertContext.resourceGroupName
-    Write-Output $AlertContext.resourceName
-    Write-Output $AlertContext.resourceType
-    Write-Output $AlertContext.resourceId
-    Write-Output $AlertContext.timestamp
+    Write-Output $WebhookBody.subscriptionId
+    Write-Output $WebhookBody.resourceGroup
+    Write-Output $WebhookBody.sqlServerName
+    Write-Output $WebhookBody.sqlDatabaseName
+    Write-Output $WebhookBody.PreferredSize
+    Write-Output $WebhookBody.timestamp
 
-    $resourceArray = $AlertContext.resourceName.split("/");
+    Set-AzureRmContext -SubscriptionId $WebhookBody.subscriptionId
 
-    $serverName = $resourceArray[0];
+    $serverName = $WebhookBody.sqlServerName;
 
-    $databaseName = "MSExpense"
+    $databaseName = $WebhookBody.sqlDatabaseName
 
-    $resourceGroupName = $AlertContext.resourceGroupName;
+    $resourceGroup = $WebhookBody.resourceGroup;
+
+    $RequestedSize = $WebhookBody.PreferredSize
 
     Write-output "Get the database: $databaseName in Server: $serverName in resourceGroup: $resourceGroupName"
 
-    $database = Get-AzurermSqlDatabase -ServerName $serverName -ResourceGroupName $resourceGroupName -DatabaseName $databaseName
+    $database = Get-AzurermSqlDatabase -ServerName $serverName -ResourceGroupName $resourceGroup -DatabaseName $databaseName
 
     if($database -ne $null)
     {
         Write-Output "found the database to resize $($database.DatabaseName) and the current size is $($database.CurrentServiceObjectiveName)"
-    }
-
-    $PreferredSizes = "S1","S2","S3" #,"P1","P2","P4","P6","P11"
-
-    $index = [array]::IndexOf($PreferredSizes, $database.CurrentServiceObjectiveName)
-
-    $rampType = $WebhookName
-
-    if($rampType -eq "ExpenseDatabaseRampUp")
-    {
-        Write-Output "Incrementing index to rampup $index"
-        $index +=1
-    }
-    elseif($rampType -eq "ExpenseDatabaseRampDown")
-    {
-        Write-Output "decreasing index to rampdown $index"
-        $index -=1
-    }
-    else
-    {
-        throw "Invalid ramp type"
-    }
-
-    if($index -ge 0 -and $index -lt $PreferredSizes.Length)
-    {
-        Write-Output "Attempt to resize the database from: $($database.CurrentServiceObjectiveName)  to $($PreferredSizes[$index])"
-        $RequestedSize = $PreferredSizes[$index]
-        #Set-AzureRmSqlDatabase -ServerName $serverName -ResourceGroupName $resourceGroupName -DatabaseName $databaseName -RequestedServiceObjectiveName $RequestedSize
-    }
-    else
-    {
-        Write-Output "Index $index out of range, so exit without resizing"
-    }
-
-    #$database
-
-
-    #Get all ARM resources from all resource groups
-    <#$ResourceGroups = Get-AzureRmResourceGroup 
-
-    foreach ($ResourceGroup in $ResourceGroups)
-    {    
-        Write-Output ("Showing resources in resource group " + $ResourceGroup.ResourceGroupName)
-        $Resources = Find-AzureRmResource -ResourceGroupNameContains $ResourceGroup.ResourceGroupName | Select ResourceName, ResourceType
-        ForEach ($Resource in $Resources)
+        
+        if($database.CurrentServiceObjectiveName -ne $RequestedSize)
         {
-            Write-Output ($Resource.ResourceName + " of type " +  $Resource.ResourceType)
+            Write-Output "Attempt to resize the database from: $($database.CurrentServiceObjectiveName)  to $RequestedSize"
+
+            Set-AzureRmSqlDatabase -ServerName $serverName -ResourceGroupName $resourceGroup -DatabaseName $databaseName -RequestedServiceObjectiveName $RequestedSize
         }
-        Write-Output ("")
+        else{
+            Write-Output "Skip  resize the database from: $($database.CurrentServiceObjectiveName) to $RequestedSize as they are already in same size"
+        }
+        }
+
     }
-    #>
-}
